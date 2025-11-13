@@ -1,23 +1,22 @@
 {
-    "name": "mcp-token-counter",
-    "displayName": "MCP Token Counter",
-    "description": "Audit and log all GitHub Copilot MCP tool calls in VSCode with ease.",
-    "publisher": "Agentity",
-    "version": "1.1.8",
+    "name": "mcp-tools-token-counter",
+    "displayName": "MCP Tools Token Counter",
+    "description": "MCP Tools Token Counter.",
+    "publisher": "ra1han",
+    "version": "0.0.1-beta.0",
     "preview": false,
     "icon": "logo.png",
     "license": "SEE LICENSE IN LICENSE",
     "keywords": [
         "mcp",
-        "audit",
-        "security",
-        "visibility",
-        "copilot"
+        "tools",
+        "token",
+        "counter"
     ],
-    "qna": "https://github.com/Agentity-com/mcp-audit-extension?tab=readme-ov-file#faq",
+    "qna": "https://github.com/ra1han/mttc?tab=readme-ov-file#faq",
     "repository": {
         "type": "git",
-        "url": "https://github.com/Agentity-com/mcp-audit-extension.git"
+        "url": "https://github.com/ra1han/mttc.git"
     },
     "engines": {
         "vscode": "^1.101.0"
@@ -49,7 +48,7 @@
             }
         ],
         "configuration": {
-            "title": "MCP Audit",
+            "title": "MTTC",
             "type": "object",
             "properties": {
                 "mcpAudit.forwarders": {
@@ -170,7 +169,7 @@
             "activitybar": [
                 {
                     "id": "mcpServersContainer",
-                    "title": "MCP Servers",
+                    "title": "MTTC",
                     "icon": "mcp-icon-view.png"
                 }
             ]
