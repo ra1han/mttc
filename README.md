@@ -1,7 +1,7 @@
 # MCP Tools Token Counter
 
 <p align="center">
-  <img src="logo.png" alt="MCP Tools Token Counter Logo" width="128" height="128">
+  <img src="https://raw.githubusercontent.com/ra1han/mttc/refs/heads/main/logo.png" alt="MCP Tools Token Counter Logo" width="128" height="128">
 </p>
 
 A VS Code extension that displays all available MCP (Model Context Protocol) servers and calculates the token count of their tool descriptions using tiktoken.
@@ -43,7 +43,7 @@ The `cl100k_base` encoding serves as an industry-standard reference point, givin
 
 ## Requirements
 
-- VS Code version 1.106.0 or higher
+- VS Code
 - MCP servers configured in your VS Code environment
 
 ## Development
