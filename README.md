@@ -33,7 +33,7 @@ Token counts are more accurate than character counts for understanding the actua
 4. Use the search option to find a specific tool or server.
 
 <p align="center">
-  <img src="img/demo.gif" alt="MCP Tools Token Counter Demo">
+  <img src="https://raw.githubusercontent.com/ra1han/mttc/refs/heads/main/img/demo.gif" alt="MCP Tools Token Counter Demo">
 </p>
 
 ### About Token Encoding
