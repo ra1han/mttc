@@ -28,6 +28,8 @@ export function activate(context: vscode.ExtensionContext) {
 class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
 	private _encoding: any;
+	private readonly _expandedGroups = new Set<string>();
+	private _filterTerm = '';
 
 	constructor() {
 		// Initialize tiktoken with cl100k_base encoding (used by GPT-4, GPT-3.5-turbo)
@@ -48,24 +50,51 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 		webviewView.webview.html = this.getWebviewContent();
 
 		// Handle messages from the webview
-		webviewView.webview.onDidReceiveMessage(async (message) => {
-			if (message.command === 'refresh') {
-				webviewView.webview.html = this.getWebviewContent();
+		webviewView.webview.onDidReceiveMessage((message) => {
+			switch (message.command) {
+				case 'refresh':
+					webviewView.webview.html = this.getWebviewContent();
+					break;
+				case 'filter':
+					if (typeof message.value === 'string') {
+						this._filterTerm = message.value;
+						webviewView.webview.html = this.getWebviewContent();
+					}
+					break;
+				case 'expand':
+					if (typeof message.key === 'string') {
+						this.expandGroup(webviewView, message.key);
+					}
+					break;
+				case 'collapse':
+					if (typeof message.key === 'string') {
+						this.collapseGroup(webviewView, message.key);
+					}
+					break;
+				default:
+					break;
 			}
 		});
 	}
 
 	private getWebviewContent(): string {
 		const groups = this.getToolGroups();
-		const totals = this.getGlobalTotals(groups);
+		const filteredGroups = this.applyFilter(groups);
+		const totals = this.getGlobalTotals(filteredGroups);
+		const overallTotals = this.getGlobalTotals(groups);
+		const isFiltered = this._filterTerm.trim().length > 0;
 		let serversHtml = '';
 
-		if (groups.length === 0) {
-			serversHtml = '<p class="no-tools">No MCP servers or tools found.</p>';
+		if (filteredGroups.length === 0) {
+			const message = isFiltered
+				? 'No MCP servers or tools match your filter.'
+				: 'No MCP servers or tools found.';
+			serversHtml = `<p class="no-tools">${message}</p>`;
 		} else {
-			for (const group of groups) {
+			for (const group of filteredGroups) {
+				const state = this._expandedGroups.has(group.key);
 				serversHtml += `
-					<div class="server ${group.classification}">
+					<div class="server ${group.classification}" data-group="${group.key}">
 						<div class="server-header">
 							<div>
 								<div class="server-name">📦 ${this.escapeHtml(group.label)}</div>
@@ -77,11 +106,23 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 							<span class="stat">🔧 ${group.tools.length} tool${group.tools.length !== 1 ? 's' : ''}</span>
 							<span class="stat">🎫 ${group.tokenCount.toLocaleString()} tokens</span>
 						</div>
-						${this.renderToolList(group)}
+						${this.renderToolList(group, state)}
 					</div>
 				`;
 			}
 		}
+
+		const filterValue = this.escapeHtml(this._filterTerm);
+		const sourceSummary = isFiltered
+			? `${totals.servers}/${overallTotals.servers} sources`
+			: `${totals.servers} ${totals.servers === 1 ? 'source' : 'sources'}`;
+		const toolSummary = isFiltered
+			? `${totals.tools}/${overallTotals.tools} tools`
+			: `${totals.tools} total tools`;
+		const tokenSummary = isFiltered
+			? `${totals.tokens.toLocaleString()}/${overallTotals.tokens.toLocaleString()} tokens`
+			: `${totals.tokens.toLocaleString()} tokens across all descriptions`;
+		const filterIndicator = isFiltered ? `<span class="filter-indicator">Filter: "${filterValue}"</span>` : '';
 
 		return `<!DOCTYPE html>
 		<html lang="en">
@@ -105,6 +146,9 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					color: var(--vscode-descriptionForeground);
 					margin-bottom: 12px;
 					flex-wrap: wrap;
+				}
+				.filter-indicator {
+					color: var(--vscode-textLink-foreground);
 				}
 				.header {
 					display: flex;
@@ -206,6 +250,23 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					flex-direction: column;
 					gap: 8px;
 				}
+				.tool-list--collapsed {
+					gap: 6px;
+				}
+				.tool-preview {
+					display: flex;
+					flex-wrap: wrap;
+					gap: 6px;
+					font-size: 12px;
+					color: var(--vscode-descriptionForeground);
+				}
+				.tool-chip {
+					background: var(--vscode-editorWidget-background);
+					border-radius: 999px;
+					padding: 2px 8px;
+					font-size: 11px;
+					color: var(--vscode-descriptionForeground);
+				}
 				.tool-row {
 					display: flex;
 					justify-content: space-between;
@@ -234,19 +295,56 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					font-size: 12px;
 					color: var(--vscode-descriptionForeground);
 				}
+				.link-button {
+					background: none;
+					border: none;
+					color: var(--vscode-textLink-foreground);
+					cursor: pointer;
+					font-size: 12px;
+					padding: 0;
+					text-decoration: underline;
+				}
+				.link-button:focus {
+					outline: 1px solid var(--vscode-focusBorder);
+				}
 				.no-tools {
 					color: var(--vscode-descriptionForeground);
 					font-style: italic;
 					text-align: center;
 					padding: 20px;
 				}
+				.filter-bar {
+					display: flex;
+					gap: 8px;
+					margin-bottom: 12px;
+				}
+				.filter-input {
+					flex: 1;
+					padding: 6px 8px;
+					border-radius: 4px;
+					border: 1px solid var(--vscode-panel-border);
+					background: var(--vscode-input-background);
+					color: var(--vscode-input-foreground);
+				}
+				.clear-filter {
+					border: none;
+					background: var(--vscode-button-secondaryBackground);
+					color: var(--vscode-button-secondaryForeground);
+					padding: 6px 10px;
+					border-radius: 4px;
+					cursor: pointer;
+				}
+				.clear-filter:hover {
+					background: var(--vscode-button-secondaryHoverBackground);
+				}
 			</style>
 		</head>
 		<body>
 			<div class="summary">
-				<span>🧩 ${totals.servers} ${totals.servers === 1 ? 'source' : 'sources'}</span>
-				<span>🔧 ${totals.tools} total tools</span>
-				<span>🎫 ${totals.tokens.toLocaleString()} tokens across all descriptions</span>
+				<span>🧩 ${sourceSummary}</span>
+				<span>🔧 ${toolSummary}</span>
+				<span>🎫 ${tokenSummary}</span>
+				${filterIndicator}
 			</div>
 			<div class="header">
 				<h2>MCP Servers</h2>
@@ -255,12 +353,52 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					<span>Refresh</span>
 				</button>
 			</div>
+			<div class="filter-bar">
+				<input class="filter-input" type="search" placeholder="Filter servers or tools" value="${filterValue}" oninput="onFilterChange(event)">
+				${isFiltered ? '<button class="clear-filter" onclick="clearFilter()">Clear</button>' : ''}
+			</div>
 			${serversHtml}
 			<script>
 				const vscode = acquireVsCodeApi();
 				function refresh() {
 					vscode.postMessage({ command: 'refresh' });
 				}
+				function toggleGroup(key, expanded) {
+					vscode.postMessage({ command: expanded ? 'collapse' : 'expand', key });
+				}
+				function onFilterChange(event) {
+					vscode.postMessage({ command: 'filter', value: event.target.value || '' });
+				}
+				function clearFilter() {
+					vscode.postMessage({ command: 'filter', value: '' });
+				}
+				document.addEventListener('click', (event) => {
+					const target = event.target;
+					if (target && target instanceof HTMLElement && target.dataset.action === 'toggle-tools') {
+						const key = target.dataset.key;
+						if (key) {
+							const expanded = target.dataset.state === 'expanded';
+							toggleGroup(key, expanded);
+						}
+					}
+				});
+				window.addEventListener('message', (event) => {
+					const message = event.data;
+					if (!message || typeof message !== 'object') {
+						return;
+					}
+					if (message.command === 'updateTools') {
+						const section = document.querySelector('.server[data-group="' + message.key + '"]');
+						if (!section) {
+							return;
+						}
+						const list = section.querySelector('.tool-list');
+						if (!list) {
+							return;
+						}
+						list.innerHTML = message.html;
+					}
+				});
 			</script>
 		</body>
 		</html>`;
@@ -275,12 +413,24 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			.replace(/'/g, "&#039;");
 	}
 
-	private renderToolList(group: ToolGroup): string {
+	private renderToolList(group: ToolGroup, expanded: boolean): string {
 		if (group.tools.length === 0) {
 			return '<div class="tool-list"><p class="no-tools">No tools registered.</p></div>';
 		}
 
-		const preview = group.tools.slice(0, 5).map(tool => `
+		if (!expanded) {
+			const preview = group.tools.slice(0, 3).map(tool => `<span class="tool-chip">${this.escapeHtml(tool.shortName)}</span>`).join('');
+			return `
+				<div class="tool-list tool-list--collapsed">
+					<div class="tool-preview">${preview || 'Tools unavailable'}</div>
+					<button class="link-button" data-action="toggle-tools" data-state="collapsed" data-key="${group.key}">
+						View all ${group.tools.length} tool${group.tools.length !== 1 ? 's' : ''}
+					</button>
+				</div>
+			`;
+		}
+
+		const preview = group.tools.map(tool => `
 			<div class="tool-row">
 				<div>
 					<div class="tool-name">${this.escapeHtml(tool.shortName)}</div>
@@ -290,10 +440,9 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			</div>
 		`).join('');
 
-		const remaining = group.tools.length - 5;
-		const footer = remaining > 0
-			? `<div class="tool-extra">+ ${remaining} more tool${remaining === 1 ? '' : 's'} available</div>`
-			: '';
+		const footer = `<div class="tool-extra">
+			<button class="link-button" data-action="toggle-tools" data-state="expanded" data-key="${group.key}">Show less</button>
+		</div>`;
 
 		return `<div class="tool-list">${preview}${footer}</div>`;
 	}
@@ -326,7 +475,7 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			const source = this.resolveToolSource(tool);
 			const enriched = this.enrichTool(tool);
 			const key = source.id.toLowerCase();
-			const entry = toolMap.get(key) ?? { ...source, tools: [], tokenCount: 0 };
+			const entry = toolMap.get(key) ?? { ...source, tools: [], tokenCount: 0, key };
 			entry.tools.push(enriched);
 			entry.tokenCount += enriched.tokenCount;
 			toolMap.set(key, entry);
@@ -345,6 +494,47 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 				}
 				return a.label.localeCompare(b.label);
 			});
+	}
+
+	private applyFilter(groups: ToolGroup[]): ToolGroup[] {
+		const term = this._filterTerm.trim().toLowerCase();
+		if (!term) {
+			return groups;
+		}
+
+		return groups.filter(group => {
+			const labelMatch = group.label.toLowerCase().includes(term) || group.id.toLowerCase().includes(term);
+			if (labelMatch) {
+				return true;
+			}
+			return group.tools.some(tool =>
+				tool.shortName.toLowerCase().includes(term) || (tool.description ?? '').toLowerCase().includes(term)
+			);
+		});
+	}
+
+	private expandGroup(view: vscode.WebviewView, key: string): void {
+		this._expandedGroups.add(key);
+		this.updateGroupSection(view, key);
+	}
+
+	private collapseGroup(view: vscode.WebviewView, key: string): void {
+		this._expandedGroups.delete(key);
+		this.updateGroupSection(view, key);
+	}
+
+	private updateGroupSection(view: vscode.WebviewView, key: string): void {
+		const group = this.getToolGroupByKey(key);
+		if (!group) {
+			return;
+		}
+		const expanded = this._expandedGroups.has(key);
+		const html = this.renderToolList(group, expanded);
+		view.webview.postMessage({ command: 'updateTools', key, html });
+	}
+
+	private getToolGroupByKey(key: string): ToolGroup | undefined {
+		return this.getToolGroups().find(group => group.key === key);
 	}
 
 	private enrichTool(tool: vscode.LanguageModelToolInformation): EnrichedTool {
@@ -492,6 +682,7 @@ type ToolGroupClassification = 'mcp' | 'extension' | 'builtin' | 'unknown';
 type ToolGroup = ToolGroupInfo & {
 	tools: EnrichedTool[];
 	tokenCount: number;
+	key: string;
 };
 
 type ToolGroupInfo = {
