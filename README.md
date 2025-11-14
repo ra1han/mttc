@@ -1,10 +1,18 @@
 # MCP Tools Token Counter
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/ra1han/mttc/refs/heads/main/logo.png" alt="MCP Tools Token Counter Logo" width="128" height="128">
+  <img src="https://raw.githubusercontent.com/ra1han/mttc/refs/heads/main/img/logo.png" alt="MCP Tools Token Counter Logo" width="128" height="128">
 </p>
 
 A VS Code extension that displays all available MCP (Model Context Protocol) servers and calculates the token count of their tool descriptions using tiktoken.
+
+## Why Token Counting?
+
+Token counts are more accurate than character counts for understanding the actual usage and cost of language model tool descriptions. This extension helps you:
+
+- Monitor the token usage of your MCP server configurations
+- Optimize tool descriptions to reduce token consumption
+- Understand the token overhead of different MCP servers
 
 ## Features
 
@@ -22,14 +30,11 @@ A VS Code extension that displays all available MCP (Model Context Protocol) ser
    - Number of tools
    - Total token count of all tool descriptions
 3. Click the "Refresh" button to update the statistics after configuration changes
+4. Use the search option to find a specific tool or server.
 
-## Why Token Counting?
-
-Token counts are more accurate than character counts for understanding the actual usage and cost of language model tool descriptions. This extension helps you:
-
-- Monitor the token usage of your MCP server configurations
-- Optimize tool descriptions to reduce token consumption
-- Understand the token overhead of different MCP servers
+<p align="center">
+  <img src="img/demo.gif" alt="MCP Tools Token Counter Demo">
+</p>
 
 ### About Token Encoding
 
@@ -79,7 +84,7 @@ Press `F5` to open a new VS Code window with the extension loaded.
 
 ## Release Notes
 
-### 0.0.1
+### 0.1.0
 
 Initial release:
 - MCP server detection and grouping

@@ -58,7 +58,18 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 				case 'filter':
 					if (typeof message.value === 'string') {
 						this._filterTerm = message.value;
-						webviewView.webview.html = this.getWebviewContent();
+						const groups = this.getToolGroups();
+						const filteredGroups = this.applyFilter(groups);
+						const totals = this.getGlobalTotals(filteredGroups);
+						const overallTotals = this.getGlobalTotals(groups);
+						const isFiltered = this._filterTerm.trim().length > 0;
+						webviewView.webview.postMessage({
+							command: 'updateContent',
+							groups: filteredGroups.map(g => this.serializeGroup(g)),
+							totals,
+							overallTotals,
+							isFiltered
+						});
 					}
 					break;
 				case 'expand':
@@ -382,6 +393,132 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				});
+				function escapeHtml(unsafe) {
+					return unsafe
+						.replace(/&/g, "&amp;")
+						.replace(/</g, "&lt;")
+						.replace(/>/g, "&gt;")
+						.replace(/"/g, "&quot;")
+						.replace(/'/g, "&#039;");
+				}
+
+				function renderClassificationLabel(kind) {
+					switch (kind) {
+						case 'mcp': return 'MCP Server';
+						case 'extension': return 'Extension Tool';
+						case 'builtin': return 'Built-In';
+						default: return 'Tool Source';
+					}
+				}
+
+				function renderToolList(group) {
+					if (group.tools.length === 0) {
+						return '<div class="tool-list"><p class="no-tools">No tools registered.</p></div>';
+					}
+
+					if (!group.expanded) {
+						const preview = group.tools.slice(0, 3).map(tool => 
+							'<span class="tool-chip">' + escapeHtml(tool.shortName) + '</span>'
+						).join('');
+						return '<div class="tool-list tool-list--collapsed">' +
+							'<div class="tool-preview">' + (preview || 'Tools unavailable') + '</div>' +
+							'<button class="link-button" data-action="toggle-tools" data-state="collapsed" data-key="' + group.key + '">' +
+							'View all ' + group.toolCount + ' tool' + (group.toolCount !== 1 ? 's' : '') + '</button></div>';
+					}
+
+					const preview = group.tools.map(tool => 
+						'<div class="tool-row">' +
+						'<div><div class="tool-name">' + escapeHtml(tool.shortName) + '</div>' +
+						'<div class="tool-description">' + escapeHtml(tool.description || 'No description provided') + '</div></div>' +
+						'<span class="tool-meta">' + tool.tokenCount.toLocaleString() + ' tokens</span></div>'
+					).join('');
+
+					const footer = '<div class="tool-extra">' +
+						'<button class="link-button" data-action="toggle-tools" data-state="expanded" data-key="' + group.key + '">Show less</button></div>';
+
+					return '<div class="tool-list">' + preview + footer + '</div>';
+				}
+
+				function updateContentWithoutReload(data) {
+					const { groups, totals, overallTotals, isFiltered } = data;
+					const filterInput = document.querySelector('.filter-input');
+					const filterValue = filterInput ? filterInput.value : '';
+					
+					const sourceSummary = isFiltered
+						? totals.servers + '/' + overallTotals.servers + ' sources'
+						: totals.servers + ' ' + (totals.servers === 1 ? 'source' : 'sources');
+					const toolSummary = isFiltered
+						? totals.tools + '/' + overallTotals.tools + ' tools'
+						: totals.tools + ' total tools';
+					const tokenSummary = isFiltered
+						? totals.tokens.toLocaleString() + '/' + overallTotals.tokens.toLocaleString() + ' tokens'
+						: totals.tokens.toLocaleString() + ' tokens across all descriptions';
+					const filterIndicator = isFiltered ? '<span class="filter-indicator">Filter: "' + escapeHtml(filterValue) + '"</span>' : '';
+
+					const summary = document.querySelector('.summary');
+					if (summary) {
+						summary.innerHTML = 
+							'<span>🧩 ' + sourceSummary + '</span>' +
+							'<span>🔧 ' + toolSummary + '</span>' +
+							'<span>🎫 ' + tokenSummary + '</span>' +
+							filterIndicator;
+					}
+
+					const filterBar = document.querySelector('.filter-bar');
+					if (filterBar) {
+						const clearBtn = filterBar.querySelector('.clear-filter');
+						if (isFiltered && !clearBtn) {
+							const btn = document.createElement('button');
+							btn.className = 'clear-filter';
+							btn.textContent = 'Clear';
+							btn.onclick = clearFilter;
+							filterBar.appendChild(btn);
+						} else if (!isFiltered && clearBtn) {
+							clearBtn.remove();
+						}
+					}
+
+					const filterBarEl = document.querySelector('.filter-bar');
+					if (!filterBarEl) return;
+
+					let serversHtml = '';
+					if (groups.length === 0) {
+						const message = isFiltered
+							? 'No MCP servers or tools match your filter.'
+							: 'No MCP servers or tools found.';
+						serversHtml = '<p class="no-tools">' + message + '</p>';
+					} else {
+						for (const group of groups) {
+							serversHtml += 
+								'<div class="server ' + group.classification + '" data-group="' + group.key + '">' +
+								'<div class="server-header"><div>' +
+								'<div class="server-name">📦 ' + escapeHtml(group.label) + '</div>' +
+								(group.id && group.id !== group.label ? '<div class="server-id">' + escapeHtml(group.id) + '</div>' : '') +
+								'</div>' +
+								'<span class="badge ' + group.classification + '">' + renderClassificationLabel(group.classification) + '</span>' +
+								'</div>' +
+								'<div class="server-stats">' +
+								'<span class="stat">🔧 ' + group.toolCount + ' tool' + (group.toolCount !== 1 ? 's' : '') + '</span>' +
+								'<span class="stat">🎫 ' + group.tokenCount.toLocaleString() + ' tokens</span>' +
+								'</div>' +
+								renderToolList(group) +
+								'</div>';
+						}
+					}
+
+					const existingServers = document.querySelectorAll('.server');
+					const existingNoTools = document.querySelector('p.no-tools');
+					
+					if (existingServers.length > 0) {
+						existingServers.forEach(el => el.remove());
+					}
+					if (existingNoTools) {
+						existingNoTools.remove();
+					}
+
+					filterBarEl.insertAdjacentHTML('afterend', serversHtml);
+				}
+
 				window.addEventListener('message', (event) => {
 					const message = event.data;
 					if (!message || typeof message !== 'object') {
@@ -397,6 +534,8 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 							return;
 						}
 						list.innerHTML = message.html;
+					} else if (message.command === 'updateContent') {
+						updateContentWithoutReload(message);
 					}
 				});
 			</script>
@@ -674,6 +813,23 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			default:
 				return 3;
 		}
+	}
+
+	private serializeGroup(group: ToolGroup): any {
+		return {
+			key: group.key,
+			label: group.label,
+			id: group.id,
+			classification: group.classification,
+			tokenCount: group.tokenCount,
+			toolCount: group.tools.length,
+			tools: group.tools.map(t => ({
+				shortName: t.shortName,
+				description: t.description,
+				tokenCount: t.tokenCount
+			})),
+			expanded: this._expandedGroups.has(group.key)
+		};
 	}
 }
 
