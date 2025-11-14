@@ -56,47 +56,19 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	private getWebviewContent(): string {
-		// Get all available language model tools
-		const tools = vscode.lm.tools;
-		
-		// Group tools by their source (MCP server)
-		const toolsByServer = new Map<string, vscode.LanguageModelToolInformation[]>();
-		
-		for (const tool of tools) {
-			// Extract server name from tool name (tools are usually named like "mcp_servername_toolname")
-			const parts = tool.name.split('_');
-			const serverName = parts.length > 2 && parts[0] === 'mcp' 
-				? parts.slice(1, parts.findIndex((p, i) => i > 1 && p === p.toLowerCase())).join('_') || parts[1]
-				: 'Built-In';
-			
-			if (!toolsByServer.has(serverName)) {
-				toolsByServer.set(serverName, []);
-			}
-			toolsByServer.get(serverName)!.push(tool);
-		}
-
-		// Generate HTML
+		const groups = this.getToolGroups();
 		let serversHtml = '';
-		
-		if (toolsByServer.size === 0) {
+
+		if (groups.length === 0) {
 			serversHtml = '<p class="no-tools">No MCP servers or tools found.</p>';
 		} else {
-			for (const [serverName, serverTools] of toolsByServer) {
-				// Calculate total token count of all tool descriptions
-				let totalTokens = 0;
-				for (const tool of serverTools) {
-					if (tool.description) {
-						const tokens = this._encoding.encode(tool.description);
-						totalTokens += tokens.length;
-					}
-				}
-
+			for (const group of groups) {
 				serversHtml += `
 					<div class="server">
-						<div class="server-name">📦 ${this.escapeHtml(serverName)}</div>
+						<div class="server-name">📦 ${this.escapeHtml(group.source)}</div>
 						<div class="server-stats">
-							<span class="stat">🔧 ${serverTools.length} tool${serverTools.length !== 1 ? 's' : ''}</span>
-							<span class="stat">🎫 ${totalTokens.toLocaleString()} tokens</span>
+							<span class="stat">🔧 ${group.tools.length} tool${group.tools.length !== 1 ? 's' : ''}</span>
+							<span class="stat">🎫 ${group.tokenCount.toLocaleString()} tokens</span>
 						</div>
 					</div>
 				`;
@@ -217,6 +189,55 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			.replace(/>/g, "&gt;")
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#039;");
+	}
+
+	private getToolGroups(): { source: string; tools: vscode.LanguageModelToolInformation[]; tokenCount: number }[] {
+		const toolMap = new Map<string, { tools: vscode.LanguageModelToolInformation[]; tokenCount: number }>();
+		for (const tool of vscode.lm.tools) {
+			const sourceLabel = this.deriveToolSource(tool.name);
+			const entry = toolMap.get(sourceLabel) ?? { tools: [], tokenCount: 0 };
+			entry.tools.push(tool);
+			if (tool.description) {
+				entry.tokenCount += this._encoding.encode(tool.description).length;
+			}
+			toolMap.set(sourceLabel, entry);
+		}
+
+		return Array.from(toolMap.entries())
+			.map(([source, data]) => ({ source, ...data }))
+			.sort((a, b) => {
+				if (b.tools.length !== a.tools.length) {
+					return b.tools.length - a.tools.length;
+				}
+				if (b.tokenCount !== a.tokenCount) {
+					return b.tokenCount - a.tokenCount;
+				}
+				return a.source.localeCompare(b.source);
+			});
+	}
+
+	private deriveToolSource(toolName: string): string {
+		const normalized = toolName.trim();
+		if (!normalized) {
+			return 'Unknown Tool Source';
+		}
+
+		const slashIndex = normalized.lastIndexOf('/');
+		if (slashIndex > 0) {
+			return normalized.slice(0, slashIndex);
+		}
+
+		const colonIndex = normalized.indexOf(':');
+		if (colonIndex > 0) {
+			return normalized.slice(0, colonIndex);
+		}
+
+		const dotIndex = normalized.indexOf('.');
+		if (dotIndex > 0) {
+			return normalized.slice(0, dotIndex);
+		}
+
+		return 'Built-In Tools';
 	}
 }
 

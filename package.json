@@ -6,7 +6,7 @@
   "publisher": "ra1han",
   "icon": "logo.png",
   "engines": {
-    "vscode": "^1.106.0"
+    "vscode": "^1.95.0"
   },
   "categories": [
     "AI", "Other"
@@ -15,7 +15,10 @@
     "type": "git",
     "url": "https://github.com/yourusername/mttc.git"
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onView:tokenCounteView.content",
+    "onCommand:mttc.tokenCounter"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
