@@ -1,10 +1,10 @@
-# VS Code Extension Project - Hello World View
+# VS Code Extension Project - MCP Server Tools Token Counter
 
-This is a basic VS Code extension that displays a "Hello World" view.
+This is a VS Code extension that calculates all the tokens used by MCP server tools descriptions.
 
 ## Project Structure
 - Extension created using Yeoman generator
-- Single webview showing "Hello World"
+- Single webview showing Token Counter
 - TypeScript-based implementation
 
 ## Development Commands

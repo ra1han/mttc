@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { get_encoding } from 'tiktoken';
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -26,6 +27,12 @@ export function activate(context: vscode.ExtensionContext) {
 
 class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 	private _view?: vscode.WebviewView;
+	private _encoding: any;
+
+	constructor() {
+		// Initialize tiktoken with cl100k_base encoding (used by GPT-4, GPT-3.5-turbo)
+		this._encoding = get_encoding('cl100k_base');
+	}
 
 	public resolveWebviewView(
 		webviewView: vscode.WebviewView,
@@ -75,17 +82,21 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			serversHtml = '<p class="no-tools">No MCP servers or tools found.</p>';
 		} else {
 			for (const [serverName, serverTools] of toolsByServer) {
-				// Calculate total character length of all tool descriptions
-				const totalDescriptionLength = serverTools.reduce((sum, tool) => 
-					sum + (tool.description?.length || 0), 0
-				);
+				// Calculate total token count of all tool descriptions
+				let totalTokens = 0;
+				for (const tool of serverTools) {
+					if (tool.description) {
+						const tokens = this._encoding.encode(tool.description);
+						totalTokens += tokens.length;
+					}
+				}
 
 				serversHtml += `
 					<div class="server">
 						<div class="server-name">📦 ${this.escapeHtml(serverName)}</div>
 						<div class="server-stats">
 							<span class="stat">🔧 ${serverTools.length} tool${serverTools.length !== 1 ? 's' : ''}</span>
-							<span class="stat">📝 ${totalDescriptionLength.toLocaleString()} chars</span>
+							<span class="stat">🎫 ${totalTokens.toLocaleString()} tokens</span>
 						</div>
 					</div>
 				`;
@@ -107,24 +118,41 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					color: var(--vscode-foreground);
 					background-color: var(--vscode-editor-background);
 				}
-				h2 {
-					margin-top: 0;
-					color: var(--vscode-foreground);
+				.header {
+					display: flex;
+					align-items: center;
+					justify-content: space-between;
+					margin-bottom: 16px;
+					padding-bottom: 10px;
 					border-bottom: 1px solid var(--vscode-panel-border);
-					padding-bottom: 8px;
+				}
+				h2 {
+					margin: 0;
+					color: var(--vscode-foreground);
+					font-size: 14px;
+					font-weight: 600;
+					letter-spacing: 0.3px;
+					text-transform: uppercase;
 				}
 				.refresh-btn {
-					background: var(--vscode-button-background);
-					color: var(--vscode-button-foreground);
-					border: none;
-					padding: 6px 12px;
+					background: transparent;
+					color: var(--vscode-foreground);
+					border: 1px solid var(--vscode-panel-border);
+					padding: 4px 8px;
 					cursor: pointer;
-					border-radius: 2px;
-					margin-bottom: 15px;
-					font-size: 13px;
+					border-radius: 3px;
+					font-size: 11px;
+					display: flex;
+					align-items: center;
+					gap: 4px;
+					transition: all 0.2s;
 				}
 				.refresh-btn:hover {
-					background: var(--vscode-button-hoverBackground);
+					background: var(--vscode-list-hoverBackground);
+					border-color: var(--vscode-focusBorder);
+				}
+				.refresh-icon {
+					font-size: 12px;
 				}
 				.server {
 					margin-bottom: 12px;
@@ -164,8 +192,13 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			</style>
 		</head>
 		<body>
-			<h2>MCP Servers</h2>
-			<button class="refresh-btn" onclick="refresh()">🔄 Refresh</button>
+			<div class="header">
+				<h2>MCP Servers</h2>
+				<button class="refresh-btn" onclick="refresh()">
+					<span class="refresh-icon">↻</span>
+					<span>Refresh</span>
+				</button>
+			</div>
 			${serversHtml}
 			<script>
 				const vscode = acquireVsCodeApi();
