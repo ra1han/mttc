@@ -1,7 +1,5 @@
-node_modules
 out
-src/mcp_server_spec.md
-*.log
-*-audit.json
 dist
+node_modules
+.vscode-test/
 *.vsix
