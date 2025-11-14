@@ -57,6 +57,7 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 
 	private getWebviewContent(): string {
 		const groups = this.getToolGroups();
+		const totals = this.getGlobalTotals(groups);
 		let serversHtml = '';
 
 		if (groups.length === 0) {
@@ -64,12 +65,19 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 		} else {
 			for (const group of groups) {
 				serversHtml += `
-					<div class="server">
-						<div class="server-name">📦 ${this.escapeHtml(group.source)}</div>
+					<div class="server ${group.classification}">
+						<div class="server-header">
+							<div>
+								<div class="server-name">📦 ${this.escapeHtml(group.label)}</div>
+								${group.id && group.id !== group.label ? `<div class="server-id">${this.escapeHtml(group.id)}</div>` : ''}
+							</div>
+							<span class="badge ${group.classification}">${this.renderClassificationLabel(group.classification)}</span>
+						</div>
 						<div class="server-stats">
 							<span class="stat">🔧 ${group.tools.length} tool${group.tools.length !== 1 ? 's' : ''}</span>
 							<span class="stat">🎫 ${group.tokenCount.toLocaleString()} tokens</span>
 						</div>
+						${this.renderToolList(group)}
 					</div>
 				`;
 			}
@@ -89,6 +97,14 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					font-size: var(--vscode-font-size);
 					color: var(--vscode-foreground);
 					background-color: var(--vscode-editor-background);
+				}
+				.summary {
+					display: flex;
+					gap: 12px;
+					font-size: 12px;
+					color: var(--vscode-descriptionForeground);
+					margin-bottom: 12px;
+					flex-wrap: wrap;
 				}
 				.header {
 					display: flex;
@@ -137,11 +153,20 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 				.server:hover {
 					background: var(--vscode-list-hoverBackground);
 				}
+				.server-header {
+					display: flex;
+					justify-content: space-between;
+					align-items: flex-start;
+					margin-bottom: 8px;
+				}
 				.server-name {
 					color: var(--vscode-textLink-foreground);
 					font-size: 15px;
 					font-weight: 600;
-					margin-bottom: 8px;
+				}
+				.server-id {
+					font-size: 11px;
+					color: var(--vscode-descriptionForeground);
 				}
 				.server-stats {
 					display: flex;
@@ -155,6 +180,60 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 					padding: 4px 8px;
 					border-radius: 3px;
 				}
+				.badge {
+					font-size: 11px;
+					padding: 2px 8px;
+					border-radius: 999px;
+					text-transform: uppercase;
+					letter-spacing: 0.3px;
+					border: 1px solid var(--vscode-panel-border);
+					color: var(--vscode-descriptionForeground);
+				}
+				.badge.mcp {
+					color: var(--vscode-testing-iconPassed);
+					border-color: var(--vscode-testing-iconPassed);
+				}
+				.badge.extension {
+					color: var(--vscode-focusBorder);
+					border-color: var(--vscode-focusBorder);
+				}
+				.badge.builtin {
+					color: var(--vscode-descriptionForeground);
+				}
+				.tool-list {
+					margin-top: 10px;
+					display: flex;
+					flex-direction: column;
+					gap: 8px;
+				}
+				.tool-row {
+					display: flex;
+					justify-content: space-between;
+					gap: 12px;
+					padding-bottom: 6px;
+					border-bottom: 1px solid var(--vscode-panel-border);
+				}
+				.tool-row:last-child {
+					border-bottom: none;
+					padding-bottom: 0;
+				}
+				.tool-name {
+					font-weight: 600;
+				}
+				.tool-description {
+					font-size: 12px;
+					color: var(--vscode-descriptionForeground);
+				}
+				.tool-meta {
+					font-size: 12px;
+					color: var(--vscode-descriptionForeground);
+					white-space: nowrap;
+				}
+				.tool-extra {
+					text-align: right;
+					font-size: 12px;
+					color: var(--vscode-descriptionForeground);
+				}
 				.no-tools {
 					color: var(--vscode-descriptionForeground);
 					font-style: italic;
@@ -164,6 +243,11 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			</style>
 		</head>
 		<body>
+			<div class="summary">
+				<span>🧩 ${totals.servers} ${totals.servers === 1 ? 'source' : 'sources'}</span>
+				<span>🔧 ${totals.tools} total tools</span>
+				<span>🎫 ${totals.tokens.toLocaleString()} tokens across all descriptions</span>
+			</div>
 			<div class="header">
 				<h2>MCP Servers</h2>
 				<button class="refresh-btn" onclick="refresh()">
@@ -191,55 +275,237 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			.replace(/'/g, "&#039;");
 	}
 
-	private getToolGroups(): { source: string; tools: vscode.LanguageModelToolInformation[]; tokenCount: number }[] {
-		const toolMap = new Map<string, { tools: vscode.LanguageModelToolInformation[]; tokenCount: number }>();
-		for (const tool of vscode.lm.tools) {
-			const sourceLabel = this.deriveToolSource(tool.name);
-			const entry = toolMap.get(sourceLabel) ?? { tools: [], tokenCount: 0 };
-			entry.tools.push(tool);
-			if (tool.description) {
-				entry.tokenCount += this._encoding.encode(tool.description).length;
-			}
-			toolMap.set(sourceLabel, entry);
+	private renderToolList(group: ToolGroup): string {
+		if (group.tools.length === 0) {
+			return '<div class="tool-list"><p class="no-tools">No tools registered.</p></div>';
 		}
 
-		return Array.from(toolMap.entries())
-			.map(([source, data]) => ({ source, ...data }))
+		const preview = group.tools.slice(0, 5).map(tool => `
+			<div class="tool-row">
+				<div>
+					<div class="tool-name">${this.escapeHtml(tool.shortName)}</div>
+					<div class="tool-description">${this.escapeHtml(tool.description || 'No description provided')}</div>
+				</div>
+				<span class="tool-meta">${tool.tokenCount.toLocaleString()} tokens</span>
+			</div>
+		`).join('');
+
+		const remaining = group.tools.length - 5;
+		const footer = remaining > 0
+			? `<div class="tool-extra">+ ${remaining} more tool${remaining === 1 ? '' : 's'} available</div>`
+			: '';
+
+		return `<div class="tool-list">${preview}${footer}</div>`;
+	}
+
+	private renderClassificationLabel(kind: ToolGroupClassification): string {
+		switch (kind) {
+			case 'mcp':
+				return 'MCP Server';
+			case 'extension':
+				return 'Extension Tool';
+			case 'builtin':
+				return 'Built-In';
+			default:
+				return 'Tool Source';
+		}
+	}
+
+	private getGlobalTotals(groups: ToolGroup[]): { servers: number; tools: number; tokens: number } {
+		return groups.reduce((acc, group) => {
+			acc.servers += 1;
+			acc.tools += group.tools.length;
+			acc.tokens += group.tokenCount;
+			return acc;
+		}, { servers: 0, tools: 0, tokens: 0 });
+	}
+
+	private getToolGroups(): ToolGroup[] {
+		const toolMap = new Map<string, ToolGroup>();
+		for (const tool of vscode.lm.tools) {
+			const source = this.resolveToolSource(tool);
+			const enriched = this.enrichTool(tool);
+			const key = source.id.toLowerCase();
+			const entry = toolMap.get(key) ?? { ...source, tools: [], tokenCount: 0 };
+			entry.tools.push(enriched);
+			entry.tokenCount += enriched.tokenCount;
+			toolMap.set(key, entry);
+		}
+
+		return Array.from(toolMap.values())
 			.sort((a, b) => {
+				if (a.classification !== b.classification) {
+					return this.classificationOrder(a.classification) - this.classificationOrder(b.classification);
+				}
 				if (b.tools.length !== a.tools.length) {
 					return b.tools.length - a.tools.length;
 				}
 				if (b.tokenCount !== a.tokenCount) {
 					return b.tokenCount - a.tokenCount;
 				}
-				return a.source.localeCompare(b.source);
+				return a.label.localeCompare(b.label);
 			});
 	}
 
-	private deriveToolSource(toolName: string): string {
+	private enrichTool(tool: vscode.LanguageModelToolInformation): EnrichedTool {
+		const tokenCount = tool.description ? this._encoding.encode(tool.description).length : 0;
+		return {
+			info: tool,
+			tokenCount,
+			shortName: this.humanizeToolName(tool.name),
+			description: tool.description ?? ''
+		};
+	}
+
+	private resolveToolSource(tool: vscode.LanguageModelToolInformation): ToolGroupInfo {
+		const fromTags = this.extractSourceFromTags(tool.tags ?? []);
+		if (fromTags) {
+			return fromTags;
+		}
+		return this.extractSourceFromName(tool.name);
+	}
+
+	private extractSourceFromTags(tags: readonly string[]): ToolGroupInfo | undefined {
+		for (const rawTag of tags) {
+			const [key, ...rest] = rawTag.split(':');
+			if (!rest.length) {
+				continue;
+			}
+			const value = rest.join(':').trim();
+			const lowerKey = key.toLowerCase();
+			if (!value) {
+				continue;
+			}
+			if (lowerKey === 'server' || lowerKey === 'mcp') {
+				return this.createGroupInfo(value, 'mcp');
+			}
+			if (lowerKey === 'extension' || lowerKey === 'ext') {
+				return this.createGroupInfo(value, 'extension');
+			}
+			if (lowerKey === 'source') {
+				const classification = value.toLowerCase().includes('mcp') ? 'mcp' : 'extension';
+				return this.createGroupInfo(value, classification);
+			}
+		}
+		return undefined;
+	}
+
+	private extractSourceFromName(toolName: string): ToolGroupInfo {
 		const normalized = toolName.trim();
 		if (!normalized) {
-			return 'Unknown Tool Source';
+			return this.createGroupInfo('Unknown Source', 'unknown');
 		}
 
-		const slashIndex = normalized.lastIndexOf('/');
-		if (slashIndex > 0) {
-			return normalized.slice(0, slashIndex);
+		const slash = normalized.lastIndexOf('/');
+		if (slash > 0) {
+			const prefix = normalized.slice(0, slash);
+			return this.createGroupInfo(prefix, this.classifyPrefix(prefix));
 		}
 
-		const colonIndex = normalized.indexOf(':');
-		if (colonIndex > 0) {
-			return normalized.slice(0, colonIndex);
+		const colon = normalized.indexOf(':');
+		if (colon > 0) {
+			const prefix = normalized.slice(0, colon);
+			return this.createGroupInfo(prefix, this.classifyPrefix(prefix));
 		}
 
-		const dotIndex = normalized.indexOf('.');
-		if (dotIndex > 0) {
-			return normalized.slice(0, dotIndex);
+		const dot = normalized.indexOf('.');
+		if (dot > 0) {
+			const prefix = normalized.slice(0, dot);
+			return this.createGroupInfo(prefix, this.classifyPrefix(prefix));
 		}
 
-		return 'Built-In Tools';
+		if (normalized.startsWith('mcp_')) {
+			const remainder = normalized.slice(4);
+			const nextUnderscore = remainder.indexOf('_');
+			const server = nextUnderscore > 0 ? remainder.slice(0, nextUnderscore) : remainder;
+			return this.createGroupInfo(server, 'mcp');
+		}
+
+		const firstUnderscore = normalized.indexOf('_');
+		if (firstUnderscore > 0) {
+			const prefix = normalized.slice(0, firstUnderscore);
+			return this.createGroupInfo(prefix, this.classifyPrefix(prefix));
+		}
+
+		return this.createGroupInfo('Built-In Tools', 'builtin');
+	}
+
+	private humanizeToolName(name: string): string {
+		const trimmed = name.trim();
+		if (!trimmed) {
+			return 'Unnamed tool';
+		}
+		const lastSlash = trimmed.lastIndexOf('/');
+		const base = lastSlash >= 0 ? trimmed.slice(lastSlash + 1) : trimmed;
+		return this.formatLabel(base);
+	}
+
+	private classifyPrefix(prefix: string): ToolGroupClassification {
+		const lower = prefix.toLowerCase();
+		if (lower.includes('mcp')) {
+			return 'mcp';
+		}
+		if (lower.includes('copilot') || lower.includes('github') || lower.includes('extension')) {
+			return 'extension';
+		}
+		return 'extension';
+	}
+
+	private createGroupInfo(raw: string, classification: ToolGroupClassification): ToolGroupInfo {
+		const id = raw || 'Built-In Tools';
+		const label = id === 'Built-In Tools' ? id : this.formatLabel(id);
+		const normalizedClassification = id === 'Built-In Tools' ? 'builtin' : classification;
+		return { id, label, classification: normalizedClassification };
+	}
+
+	private formatLabel(value: string): string {
+		const cleaned = value
+			.replace(/[._-]/g, ' ')
+			.replace(/\//g, ' / ')
+			.replace(/\s+/g, ' ')
+			.trim();
+		if (!cleaned) {
+			return value;
+		}
+		return cleaned
+			.split(' ')
+			.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+			.join(' ');
+	}
+
+	private classificationOrder(kind: ToolGroupClassification): number {
+		switch (kind) {
+			case 'mcp':
+				return 0;
+			case 'extension':
+				return 1;
+			case 'builtin':
+				return 2;
+			default:
+				return 3;
+		}
 	}
 }
+
+type ToolGroupClassification = 'mcp' | 'extension' | 'builtin' | 'unknown';
+
+type ToolGroup = ToolGroupInfo & {
+	tools: EnrichedTool[];
+	tokenCount: number;
+};
+
+type ToolGroupInfo = {
+	id: string;
+	label: string;
+	classification: ToolGroupClassification;
+};
+
+type EnrichedTool = {
+	info: vscode.LanguageModelToolInformation;
+	tokenCount: number;
+	shortName: string;
+	description: string;
+};
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
