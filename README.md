@@ -84,7 +84,7 @@ Press `F5` to open a new VS Code window with the extension loaded.
 
 ## Release Notes
 
-### 0.1.0
+### 0.1.1
 
 Initial release:
 - MCP server detection and grouping
