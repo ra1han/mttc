@@ -67,7 +67,7 @@ class tokenCounteViewProvider implements vscode.WebviewViewProvider {
 			const parts = tool.name.split('_');
 			const serverName = parts.length > 2 && parts[0] === 'mcp' 
 				? parts.slice(1, parts.findIndex((p, i) => i > 1 && p === p.toLowerCase())).join('_') || parts[1]
-				: 'Other';
+				: 'Built-In';
 			
 			if (!toolsByServer.has(serverName)) {
 				toolsByServer.set(serverName, []);

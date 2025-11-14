@@ -1,5 +1,9 @@
 # MCP Tools Token Counter
 
+<p align="center">
+  <img src="logo.png" alt="MCP Tools Token Counter Logo" width="128" height="128">
+</p>
+
 A VS Code extension that displays all available MCP (Model Context Protocol) servers and calculates the token count of their tool descriptions using tiktoken.
 
 ## Features
