@@ -2,7 +2,7 @@
   "name": "mttc",
   "displayName": "MCP Tools Token Counter",
   "description": "MCP Tools Token Counter extension for VSCode",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "ra1han",
   "icon": "logo.png",
   "engines": {
